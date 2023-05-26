@@ -1,6 +1,11 @@
-from api_rubika import  Bot
-auth = "auth in requests"
-privatekey = "your private key"
-bot = Bot(auth,privatekey)
+#login sample
+from api_rubika import Bot
 
-print(bot.sendMessage("g0BTkrT04c9eac7ab2c1d71c71a192e0","hi everybody\nthis message sended using encryption of rubika v6 "))
+phone = str(input("phone : "))
+tmp , data = Bot.sendCode(phone)
+phone_code = str(input("code : "))
+auth , guid , private = Bot.signIn(tmp,phone,phone_code,data['data']['phone_code_hash'])
+bot = Bot(auth,private,False)
+print(bot.registerDevice("Windows 10","Firefox 113","25010064641090201001011130"))
+print(bot.getMyStickerSets())
+print(bot.sendMessage(guid,"hi everybody\nthis message sended using encryption of rubika v6 "))

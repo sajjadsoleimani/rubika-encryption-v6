@@ -1,14 +1,14 @@
 import base64
 from json import dumps, loads
-from random import randint
+from random import randint,choice
 import urllib3
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad, unpad
 from Crypto.Signature import pkcs1_15
+from Crypto.Cipher import PKCS1_OAEP
 from Crypto.Hash import SHA256
 from Crypto.PublicKey import RSA
 from requests import post
-import random
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 class encryption:
@@ -27,8 +27,18 @@ class encryption:
 			\nmake key of encryption to key of request 
 		"""
 		n = ""
+		lowercase = "abcdefghijklmnopqrstuvwxyz"
+		uppercase = "abcdefghijklmnopqrstuvwxyz".upper()
+		digits = "0123456789"
 		for s in auth_enc:
-			n += chr(((32 - (ord(s) - 97)) % 26) + 97)
+			if s in lowercase:
+				n += chr(((32 - (ord(s) - 97)) % 26) + 97)
+			elif s in uppercase:
+				n += chr(((29- (ord(s) - 65)) % 26) + 65)
+			elif s in digits:
+				n += chr(((13 - (ord(s)- 48)) % 10) + 48)
+			else:
+				n += s
 		return n
 	
 	def secret(self, e):
@@ -67,15 +77,21 @@ class encryption:
 		sha_data = SHA256.new(data_enc.encode("utf-8"))
 		signature = pkcs1_15.new(self.keypair).sign(sha_data)
 		return base64.b64encode(signature).decode("utf-8")
+
+	def decryptRsaOaep(private:str,data_enc:str):
+		keyPair = RSA.import_key(private.encode("utf-8"))
+		return PKCS1_OAEP.new(keyPair).decrypt(base64.b64decode(data_enc)).decode("utf-8")
 class Bot:
-	def __init__(self, auth, private_key,is_auth_send=True):	
+	def __init__(self, auth, private_key=None,is_auth_send=True,base64decode_private=False,useragent=None):	
 		if is_auth_send:
 			self.auth = encryption.changeAuthType(auth)
 			self.auth_send = auth
 		else:
 			self.auth = auth
 			self.auth_send = encryption.changeAuthType(auth)
-		self.enc = encryption(self.auth,private_key)
+		if base64decode_private:
+			private_key = loads(base64.b64decode(private_key).decode("utf-8"))['d']
+		self.enc = encryption(self.auth,private_key if private_key else None)
 		self.default_client = {
 							"app_name":"Main",
 							"app_version":"4.3.1",
@@ -83,25 +99,45 @@ class Bot:
 							"package":"web.rubika.ir",
 							"lang_code":"fa"
 							}
-
-	def send_data(self,input,method,client=None,api_version="6"):
+		self.default_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/113.0" if not useragent else useragent
+	def get_url(self):
+		p = None
+		while 1:
+			try:
+				datax = {"api_version":"4","method":"getDCs","client":{"app_name":"Main","app_version":"4.3.1","platform":"Web","package":"web.rubika.ir","lang_code":"fa"}}
+				p = post(json=datax,url='https://getdcmess.iranlms.ir/',headers={
+        			'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/113.0',
+					'Origin':'https://web.rubika.ir',
+					'Referer':'https://web.rubika.ir/',
+					'Host':'getdcmess.iranlms.ir'
+        		}).json()
+				break
+			except Exception as e:
+				print(e)
+				continue
+		p = p['data']['default_api_urls'][1]
+		return p
+	
+	def send_data(self,input,method,client=None,api_version="6",tmp=False):
 		p = None
 		while 1:
 			try:
 				data_ = {
 					"api_version":api_version,
-					"auth":self.auth_send,
+					"auth" if not tmp else "tmp_session":self.auth_send if not tmp else self.auth,
 					"data_enc":self.enc.encrypt(dumps({
 						"method":method,
 						"input":input,
 						"client": client if client else self.default_client
 					})),
 				}
-				data_["sign"] = self.enc.makeSignFromData(data_["data_enc"])
-				
-				url = "https://messengerg2c"+str(random.randint(1,52))+".iranlms.ir/"
-				print(url)
-				p = post(json=data_,url=url)
+				if api_version == "6" and tmp == False:
+					data_["sign"] = self.enc.makeSignFromData(data_["data_enc"])
+				url:str = "https://messengerg2c"+str(randint(1,69))+".iranlms.ir/"
+				p = post(json=data_,url=url,headers={'User-Agent': self.default_agent,
+                    'Origin':'https://web.rubika.ir',
+					'Referer':'https://web.rubika.ir/',
+					'Host':url.replace("https://","").replace("/","")})
 				p = p.json()
 				break
 			except Exception as e:
@@ -121,3 +157,62 @@ class Bot:
 			input["reply_to_message_id"] = message_id
 		return self.send_data(input,method)
 	
+	def makeRandomTmpSession():
+		chars = "abcdefghijklmnopqrstuvwxyz"
+		tmp = ""
+		for i in range(32):
+			tmp += choice(chars)
+		return tmp
+	
+	def sendCode(phone:str,type="SMS"):
+		input = {
+      		"phone_number":phone,
+        	"send_type":"SMS"
+        }
+		method = "sendCode"
+		tmp = Bot.makeRandomTmpSession()
+		b = Bot(tmp,is_auth_send=False)  
+		return tmp , b.send_data(input,method,api_version="5",tmp=True)
+	
+	def rsaKeyGenrate():
+		keyPair = RSA.generate(1024)
+		public = encryption.changeAuthType(base64.b64encode(keyPair.publickey().export_key()).decode("utf-8"))
+		privarte = keyPair.export_key().decode("utf-8")
+		return public,privarte
+	
+	def signIn(tmp,phone,phone_code,hash,public_key=None):
+		public , private = Bot.rsaKeyGenrate()
+		input = {
+			"phone_number":phone,
+			"phone_code_hash":hash,
+			"phone_code":str(phone_code),
+			"public_key":public if not public_key else public_key
+		}
+		method = "signIn"
+		b = Bot(tmp,is_auth_send=False)  
+		request = b.send_data(input,method,tmp=True)
+		if request['status'] == "OK" and request['data']['status'] == "OK":
+			auth = encryption.decryptRsaOaep(private,request['data']['auth'])
+			guid = request['data']['user']['user_guid']	
+			return auth , guid, private
+		else:
+			return None
+	
+	def registerDevice(self,systemversion,device_model,device_hash):
+		input = {
+			"token_type":"Web",
+			"token":"",
+			"app_version":"WB_4.3.1",
+			"lang_code": "fa",
+			"system_version": systemversion,
+			"device_model": device_model,
+			"device_hash" : device_hash
+		}
+		print(input)
+		method = "registerDevice"
+		return self.send_data(input,method)
+	
+	def getMyStickerSets(self):
+		input = {}
+		method = "getMyStickerSets"
+		return self.send_data(input,method)
