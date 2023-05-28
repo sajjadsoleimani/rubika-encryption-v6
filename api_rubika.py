@@ -164,15 +164,17 @@ class Bot:
 			tmp += choice(chars)
 		return tmp
 	
-	def sendCode(phone:str,type="SMS"):
+	def sendCode(phone:str,pass_key=None,type="SMS"):
 		input = {
       		"phone_number":phone,
         	"send_type":"SMS"
         }
+		if pass_key:
+			input['pass_key'] = pass_key
 		method = "sendCode"
 		tmp = Bot.makeRandomTmpSession()
-		b = Bot(tmp,is_auth_send=False)  
-		return tmp , b.send_data(input,method,api_version="5",tmp=True)
+		b = Bot(tmp,False)  
+		return tmp , b.send_data(input,method,tmp=True)
 	
 	def rsaKeyGenrate():
 		keyPair = RSA.generate(1024)
@@ -191,6 +193,7 @@ class Bot:
 		method = "signIn"
 		b = Bot(tmp,is_auth_send=False)  
 		request = b.send_data(input,method,tmp=True)
+		print(request)
 		if request['status'] == "OK" and request['data']['status'] == "OK":
 			auth = encryption.decryptRsaOaep(private,request['data']['auth'])
 			guid = request['data']['user']['user_guid']	
